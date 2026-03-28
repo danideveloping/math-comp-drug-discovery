@@ -1,0 +1,136 @@
+---
+title: "homework_mod2"
+author: "Daniela Shahini"
+date: "2026-03-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Factor analysis (short intro)
+
+Factor analysis is when you have a lot of variables that might be related and you want to see if a few hidden "factors" can explain them. Each variable gets loadings that show how much it belongs to each factor.
+
+I used **exploratory** factor analysis (EFA) here — you don't decide the structure before, you look at the data.
+
+I picked **PCOS** as a topic because many women have it and I feel like learning more about it. The numbers below are **made up in R** for the assignment, not real patients.
+
+```{r packages}
+library(psych)
+library(ggplot2)
+library(tidyr)
+```
+
+## Fake data
+
+I simulated 300 rows. There are 3 hidden factors I used to build the data:
+
+- metabolic-ish → waist, glucose, HDL  
+- androgen-ish → acne, hirsutism, testosterone proxy  
+- cycle-ish → irregular cycles, anovulation proxy  
+
+```{r simulate-data}
+set.seed(20260328)
+n <- 300
+
+F_metabolic  <- rnorm(n)
+F_androgen   <- rnorm(n)
+F_cycle      <- rnorm(n)
+
+waist_cm <- 80 + 8 * F_metabolic + rnorm(n, 0, 5)
+fasting_glucose <- 5.0 + 0.35 * F_metabolic + rnorm(n, 0, 0.45)
+hdl_mmol <- 1.5 - 0.12 * F_metabolic + rnorm(n, 0, 0.18)
+
+acne_severity <- pmax(0, 2 + 0.9 * F_androgen + rnorm(n, 0, 0.9))
+hirsutism_score <- pmax(0, 3 + 1.0 * F_androgen + rnorm(n, 0, 1.0))
+testosterone_proxy <- 1.0 + 0.45 * F_androgen + rnorm(n, 0, 0.35)
+
+cycle_irregularity <- pmax(0, 4 + 1.1 * F_cycle + rnorm(n, 0, 1.2))
+anovulation_proxy <- pmax(0, 2 + 0.95 * F_cycle + rnorm(n, 0, 1.0))
+
+X <- data.frame(
+  waist_cm,
+  fasting_glucose,
+  hdl_mmol,
+  acne_severity,
+  hirsutism_score,
+  testosterone_proxy,
+  cycle_irregularity,
+  anovulation_proxy
+)
+
+knitr::kable(head(X, 6))
+```
+
+## Correlation + checks
+
+```{r correlation}
+R <- cor(X)
+round(R, 2)
+```
+
+KMO and Bartlett from `psych` (lecture slides usually mention these):
+
+```{r kmo-bartlett}
+KMO(X)
+cortest.bartlett(R, n = n)
+```
+
+## How many factors?
+
+Scree plot + eigenvalues. I already know there should be 3 because I generated the data that way.
+
+```{r scree}
+ev <- eigen(R)$values
+data.frame(factor = seq_along(ev), eigenvalue = ev)
+
+screeplot(princomp(X, cor = TRUE), type = "lines", main = "scree")
+```
+
+## EFA with psych
+
+3 factors, oblimin rotation, minres. Loadings printed with cutoff 0.35 so it's less messy.
+
+```{r efa}
+fa_fit <- fa(
+  r = X,
+  nfactors = 3,
+  rotate = "oblimin",
+  fm = "minres",
+  scores = "regression"
+)
+
+print(fa_fit$loadings, cutoff = 0.35)
+```
+
+Correlation between factors (because oblimin allows them to correlate):
+
+```{r factor-cor}
+fa_fit$Phi
+```
+
+## Plot
+
+```{r loadings-plot, fig.height=5, fig.width=7}
+loadings_mat <- unclass(fa_fit$loadings)
+loadings_df <- as.data.frame(loadings_mat)
+loadings_df$variable <- rownames(loadings_df)
+loadings_long <- pivot_longer(
+  loadings_df,
+  cols = -variable,
+  names_to = "factor",
+  values_to = "loading"
+)
+
+ggplot(loadings_long, aes(x = variable, y = loading, fill = factor)) +
+  geom_col(position = "dodge") +
+  coord_flip() +
+  labs(title = "loadings", x = NULL, y = NULL) +
+  theme_minimal()
+```
+
+## What I learned
+
+Factor analysis groups variables that move together into factors. You check if FA makes sense (correlations, KMO, Bartlett), decide how many factors (scree etc.), then interpret loadings after rotation. My data is fake so it's just to show the steps.
